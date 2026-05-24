@@ -59,15 +59,22 @@ runs:
         sed "s|repo-root:.*|repo-root: \"$(pwd)\"|" ./project.yaml \
           > "$RUNNER_TEMP/cco-project/project.yaml"
 
+        # Only pass --primary-profiles-dir and --prompts-dir when the repo
+        # has a local profile directory; bundled profiles don't need them.
+        PROFILE_DIR=".github/cco/${{ inputs.profile }}"
+        EXTRA_ARGS=""
+        if [ -d "$PROFILE_DIR" ]; then
+          EXTRA_ARGS="--primary-profiles-dir $PROFILE_DIR/ --prompts-dir $PROFILE_DIR/prompts/"
+        fi
+
         set -o pipefail
         cco run \
           --project-config "$RUNNER_TEMP/cco-project/project.yaml" \
-          --primary-profiles-dir ".github/cco/${{ inputs.profile }}/" \
-          --prompts-dir ".github/cco/${{ inputs.profile }}/prompts/" \
           --run-folder "$RUNNER_TEMP/cco-run/" \
           --feature-path "$RUNNER_TEMP/cco-input" \
           --profile "${{ inputs.profile }}" \
           --branch "$CCO_BRANCH" \
+          $EXTRA_ARGS \
           2>&1 | python3 -u "$GITHUB_ACTION_PATH/scripts/group_output.py"
 
     - name: Show git status on failure
