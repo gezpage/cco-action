@@ -1,0 +1,82 @@
+name: 'cco run'
+description: 'Run a cco pipeline from a GitHub issue overview'
+branding:
+  icon: 'cpu'
+  color: 'blue'
+
+inputs:
+  profile:
+    description: >
+      Profile name. Must match a directory under .github/cco/<profile>/ in
+      the calling repo containing profile.yaml.
+    required: true
+  issue-number:
+    description: 'GitHub issue number whose body becomes the pipeline overview (overview.md)'
+    required: true
+  cco-version:
+    description: 'cco package version to install. Omit or set to "latest" for the newest release.'
+    required: false
+    default: 'latest'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
+    - name: Install cco + cco-profiles
+      shell: bash
+      run: |
+        if [ "${{ inputs.cco-version }}" = "latest" ]; then
+          uv tool install cco --with cco-profiles
+        else
+          uv tool install "cco==${{ inputs.cco-version }}" --with cco-profiles
+        fi
+
+    - name: Fetch issue body and derive feature slug
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh issue view "${{ inputs.issue-number }}" --json body -q .body \
+          > "$RUNNER_TEMP/overview.md"
+
+        TITLE=$(gh issue view "${{ inputs.issue-number }}" --json title -q .title)
+        SLUG=$(printf '%s' "$TITLE" \
+          | tr '[:upper:]' '[:lower:]' \
+          | sed 's/[^a-z0-9]/-/g' \
+          | sed 's/-\{2,\}/-/g' \
+          | sed 's/^-//; s/-$//' \
+          | cut -c1-50)
+        echo "CCO_FEATURE=${SLUG:-issue-${{ inputs.issue-number }}}" >> "$GITHUB_ENV"
+
+    - name: Run cco pipeline
+      shell: bash
+      run: |
+        cco run \
+          --project-config ./project.yaml \
+          --profiles-dir ".github/cco/${{ inputs.profile }}/" \
+          --prompts-dir ".github/cco/${{ inputs.profile }}/prompts/" \
+          --overview-file "$RUNNER_TEMP/overview.md" \
+          --run-folder "$RUNNER_TEMP/cco-run/" \
+          --feature "$CCO_FEATURE" \
+          --profile "${{ inputs.profile }}"
+
+    - name: Write plan.md to job summary
+      if: always()
+      shell: bash
+      run: |
+        PLAN="$RUNNER_TEMP/cco-run/plan.md"
+        if [ -f "$PLAN" ]; then
+          cat "$PLAN" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "_No plan.md found — pipeline may not have started._" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload run folder as artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cco-run
+        path: ${{ runner.temp }}/cco-run/
+        if-no-files-found: warn
