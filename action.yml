@@ -23,8 +23,8 @@ runs:
     - name: Install cco + cco-profiles
       shell: bash
       run: |
-        uv tool install "git+https://github.com/gezpage/cco.git" \
-          --with "git+https://github.com/gezpage/cco-profiles.git" \
+        uv tool install "git+ssh://git@github.com/gezpage/cco.git" \
+          --with "git+ssh://git@github.com/gezpage/cco-profiles.git" \
           --force-reinstall
 
     - name: Fetch issue body and derive feature slug
