@@ -27,12 +27,17 @@ runs:
     - name: Install cco + cco-profiles
       shell: bash
       run: |
-        # Use the same HTTPS URL that cco-profiles declares in [tool.uv.sources]
-        # so uv's resolver sees a single source for `cco` and does not conflict.
-        # The git URL rewrite above redirects both fetches to SSH transparently.
-        uv tool install "git+https://github.com/gezpage/cco@v2.0.0" \
-          --with "git+https://github.com/gezpage/cco-profiles.git" \
-          --force-reinstall
+        # uv tool install reads [tool.uv.sources] from installed packages, which causes
+        # a "conflicting URLs" error when cco-profiles' uv.sources tag-ref and our
+        # command-line rev-ref for cco look identical but differ internally.
+        # uv pip install is a PEP-compliant pip replacement that ignores
+        # [tool.uv.sources], so both packages resolve without conflict.
+        CCO_ENV="$RUNNER_TEMP/cco-env"
+        uv venv "$CCO_ENV"
+        uv pip install --python "$CCO_ENV/bin/python" \
+          "cco @ git+https://github.com/gezpage/cco@v2.0.0" \
+          "cco-profiles @ git+https://github.com/gezpage/cco-profiles.git"
+        echo "$CCO_ENV/bin" >> "$GITHUB_PATH"
 
     - name: Fetch issue body and derive feature slug
       shell: bash
