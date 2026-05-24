@@ -13,10 +13,6 @@ inputs:
   issue-number:
     description: 'GitHub issue number whose body becomes the pipeline overview (overview.md)'
     required: true
-  cco-version:
-    description: 'cco package version to install. Omit or set to "latest" for the newest release.'
-    required: false
-    default: 'latest'
 
 runs:
   using: 'composite'
@@ -27,19 +23,18 @@ runs:
     - name: Install cco + cco-profiles
       shell: bash
       run: |
-        if [ "${{ inputs.cco-version }}" = "latest" ]; then
-          uv tool install cco --with cco-profiles
-        else
-          uv tool install "cco==${{ inputs.cco-version }}" --with cco-profiles
-        fi
+        uv tool install "git+https://github.com/gezpage/cco.git" \
+          --with "git+https://github.com/gezpage/cco-profiles.git" \
+          --force-reinstall
 
     - name: Fetch issue body and derive feature slug
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        mkdir -p "$RUNNER_TEMP/cco-input"
         gh issue view "${{ inputs.issue-number }}" --json body -q .body \
-          > "$RUNNER_TEMP/overview.md"
+          > "$RUNNER_TEMP/cco-input/overview.md"
 
         TITLE=$(gh issue view "${{ inputs.issue-number }}" --json title -q .title)
         SLUG=$(printf '%s' "$TITLE" \
@@ -55,11 +50,10 @@ runs:
       run: |
         cco run \
           --project-config ./project.yaml \
-          --profiles-dir ".github/cco/${{ inputs.profile }}/" \
+          --primary-profiles-dir ".github/cco/${{ inputs.profile }}/" \
           --prompts-dir ".github/cco/${{ inputs.profile }}/prompts/" \
-          --overview-file "$RUNNER_TEMP/overview.md" \
           --run-folder "$RUNNER_TEMP/cco-run/" \
-          --feature "$CCO_FEATURE" \
+          --feature-path "$RUNNER_TEMP/cco-input" \
           --profile "${{ inputs.profile }}"
 
     - name: Write plan.md to job summary
