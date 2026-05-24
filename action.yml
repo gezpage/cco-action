@@ -20,6 +20,10 @@ runs:
     - name: Install uv
       uses: astral-sh/setup-uv@v5
 
+    - name: Rewrite GitHub HTTPS to SSH
+      shell: bash
+      run: git config --global url."ssh://git@github.com/".insteadOf "https://github.com/"
+
     - name: Install cco + cco-profiles
       shell: bash
       run: |
