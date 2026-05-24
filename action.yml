@@ -55,6 +55,19 @@ runs:
         echo "CCO_FEATURE=${SLUG:-issue-${{ inputs.issue-number }}}" >> "$GITHUB_ENV"
         echo "CCO_BRANCH=cco/${SLUG:-issue-${{ inputs.issue-number }}}" >> "$GITHUB_ENV"
 
+    - name: Prepare flat-mode context directory
+      shell: bash
+      run: |
+        # In flat mode cco derives docs_root as the repo checkout root and writes
+        # projects/<name>/context.md there, making the git working tree dirty before
+        # it tries to create the feature branch. Pre-create the file and exclude the
+        # whole projects/ subtree from git via the local info/exclude so it never
+        # registers as an untracked change.
+        PROJECT_NAME=$(basename "$(pwd)")
+        mkdir -p "projects/$PROJECT_NAME"
+        touch "projects/$PROJECT_NAME/context.md"
+        echo "projects/" >> .git/info/exclude
+
     - name: Run cco pipeline
       shell: bash
       run: |
