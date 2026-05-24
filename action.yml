@@ -53,6 +53,7 @@ runs:
           | sed 's/^-//; s/-$//' \
           | cut -c1-50)
         echo "CCO_FEATURE=${SLUG:-issue-${{ inputs.issue-number }}}" >> "$GITHUB_ENV"
+        echo "CCO_BRANCH=cco/${SLUG:-issue-${{ inputs.issue-number }}}" >> "$GITHUB_ENV"
 
     - name: Run cco pipeline
       shell: bash
@@ -63,7 +64,8 @@ runs:
           --prompts-dir ".github/cco/${{ inputs.profile }}/prompts/" \
           --run-folder "$RUNNER_TEMP/cco-run/" \
           --feature-path "$RUNNER_TEMP/cco-input" \
-          --profile "${{ inputs.profile }}"
+          --profile "${{ inputs.profile }}" \
+          --branch "$CCO_BRANCH"
 
     - name: Write plan.md to job summary
       if: always()
