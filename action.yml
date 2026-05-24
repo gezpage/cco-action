@@ -27,8 +27,11 @@ runs:
     - name: Install cco + cco-profiles
       shell: bash
       run: |
-        uv tool install "git+ssh://git@github.com/gezpage/cco.git" \
-          --with "git+ssh://git@github.com/gezpage/cco-profiles.git" \
+        # Use the same HTTPS URL that cco-profiles declares in [tool.uv.sources]
+        # so uv's resolver sees a single source for `cco` and does not conflict.
+        # The git URL rewrite above redirects both fetches to SSH transparently.
+        uv tool install "git+https://github.com/gezpage/cco@v2.0.0" \
+          --with "git+https://github.com/gezpage/cco-profiles.git" \
           --force-reinstall
 
     - name: Fetch issue body and derive feature slug
