@@ -58,13 +58,15 @@ runs:
     - name: Run cco pipeline
       shell: bash
       run: |
-        # Copy project.yaml to RUNNER_TEMP with an absolute repo-root so that
-        # cco's docs-structure writes (context.md etc.) land in temp and never
-        # dirty the git working tree.
         mkdir -p "$RUNNER_TEMP/cco-project"
         sed "s|repo-root:.*|repo-root: \"$(pwd)\"|" ./project.yaml \
           > "$RUNNER_TEMP/cco-project/project.yaml"
 
+        # Wrap cco output through a Python filter that injects GitHub Actions
+        # log-grouping markers (::group:: / ::endgroup::) each time a new stage
+        # is dispatched. This gives a collapsible section per stage in the
+        # Actions log viewer without requiring any changes to cco itself.
+        set -o pipefail
         cco run \
           --project-config "$RUNNER_TEMP/cco-project/project.yaml" \
           --primary-profiles-dir ".github/cco/${{ inputs.profile }}/" \
@@ -72,7 +74,32 @@ runs:
           --run-folder "$RUNNER_TEMP/cco-run/" \
           --feature-path "$RUNNER_TEMP/cco-input" \
           --profile "${{ inputs.profile }}" \
-          --branch "$CCO_BRANCH"
+          --branch "$CCO_BRANCH" \
+        2>&1 | python3 -u - <<'PYEOF'
+import sys, re
+
+DISPATCH_RE = re.compile(r'^\[cco\] \[([^\]]+)\] dispatching ')
+PIPELINE_END_RE = re.compile(r'^\[cco\] \[pipeline\] (?:core pipeline|draft PR|PR finalisation|finaliser)')
+
+in_group = False
+
+for line in sys.stdin:
+    sys.stdout.write(line)
+    sys.stdout.flush()
+
+    if DISPATCH_RE.match(line):
+        stage = DISPATCH_RE.match(line).group(1)
+        if in_group:
+            print('::endgroup::', flush=True)
+        print(f'::group::{stage}', flush=True)
+        in_group = True
+    elif in_group and PIPELINE_END_RE.match(line):
+        print('::endgroup::', flush=True)
+        in_group = False
+
+if in_group:
+    print('::endgroup::', flush=True)
+PYEOF
 
     - name: Show git status on failure
       if: failure()
@@ -83,21 +110,67 @@ runs:
         git status --porcelain >> "$GITHUB_STEP_SUMMARY" || true
         echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-    - name: Write plan.md to job summary
+    - name: Write pipeline summary
       if: always()
       shell: bash
       run: |
-        PLAN="$RUNNER_TEMP/cco-run/plan.md"
-        if [ -f "$PLAN" ]; then
-          cat "$PLAN" >> "$GITHUB_STEP_SUMMARY"
-        else
-          echo "_No plan.md found — pipeline may not have started._" >> "$GITHUB_STEP_SUMMARY"
-        fi
+        python3 - <<'PYEOF'
+import os, sys
+from pathlib import Path
 
-    - name: Upload run folder as artifact
+try:
+    import yaml
+except ImportError:
+    sys.exit(0)
+
+run_folder = Path(os.environ["RUNNER_TEMP"]) / "cco-run"
+summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+state_path = run_folder / "_state.yaml"
+plan_path = run_folder / "plan.md"
+
+if not summary_path:
+    sys.exit(0)
+
+with open(summary_path, "a") as out:
+    state = yaml.safe_load(state_path.read_text()) if state_path.exists() else {}
+    stages = state.get("stages", {})
+    elapsed = state.get("elapsed", {})
+    profile = state.get("profile", "unknown")
+    branch = state.get("branch", "")
+
+    # Overall status from worst stage status
+    PRECEDENCE = ["failed", "blocked", "changes-requested", "in_progress", "passed", "skipped", "pending"]
+    all_statuses = list(stages.values())
+    overall = next((s for s in PRECEDENCE if s in all_statuses), "pending") if all_statuses else "pending"
+    icon = {"passed": "✅", "failed": "❌", "blocked": "🚫", "in_progress": "⏳"}.get(overall, "⏳")
+
+    out.write(f"## {icon} cco — {profile}\n\n")
+    if branch:
+        out.write(f"**Branch:** `{branch}`\n\n")
+
+    if stages:
+        out.write("| Stage | Status | Elapsed |\n")
+        out.write("|---|---|---|\n")
+        for stage, status in stages.items():
+            si = {"passed": "✅", "failed": "❌", "blocked": "🚫", "skipped": "⏭️",
+                  "changes-requested": "🔄", "in_progress": "⏳"}.get(status, "⏳")
+            secs = int(elapsed.get(stage, 0))
+            mins, s = divmod(secs, 60)
+            elapsed_str = f"{mins}m {s}s" if mins else f"{s}s"
+            out.write(f"| `{stage}` | {si} {status} | {elapsed_str} |\n")
+        out.write("\n")
+
+    if plan_path.exists():
+        out.write("---\n\n")
+        out.write(plan_path.read_text())
+    elif not stages:
+        out.write("_Pipeline did not start — no plan.md or state found._\n")
+PYEOF
+
+    - name: Upload run artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: cco-run
+        name: cco-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
         path: ${{ runner.temp }}/cco-run/
         if-no-files-found: warn
