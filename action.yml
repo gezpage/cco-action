@@ -57,9 +57,12 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        # Generate the project.yaml cco anchors on (flat mode, ADR-053).
+        # repo-root must point at the checked-out repo; callers don't commit one.
         mkdir -p "$RUNNER_TEMP/cco-project"
-        sed "s|repo-root:.*|repo-root: \"$(pwd)\"|" ./project.yaml \
-          > "$RUNNER_TEMP/cco-project/project.yaml"
+        cat > "$RUNNER_TEMP/cco-project/project.yaml" <<EOF
+        repo-root: "$(pwd)"
+        EOF
 
         # Only pass --primary-profiles-dir and --prompts-dir when the repo
         # has a local profile directory; bundled profiles don't need them.
