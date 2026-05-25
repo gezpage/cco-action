@@ -39,10 +39,19 @@ runs:
         GH_TOKEN: ${{ github.token }}
       run: |
         mkdir -p "$RUNNER_TEMP/cco-input"
-        gh issue view "${{ inputs.issue-number }}" --json body -q .body \
+        gh issue view "${{ inputs.issue-number }}" --json body,title,comments \
+          > "$RUNNER_TEMP/cco-input/issue.json"
+
+        # Write issue body
+        jq -r '.body' "$RUNNER_TEMP/cco-input/issue.json" \
           > "$RUNNER_TEMP/cco-input/overview.md"
 
-        TITLE=$(gh issue view "${{ inputs.issue-number }}" --json title -q .title)
+        # Append each comment as a numbered section (body only, no metadata)
+        jq -r '.comments | to_entries[] | "\n## Comment \(.key + 1)\n\n\(.value.body)"' \
+          "$RUNNER_TEMP/cco-input/issue.json" \
+          >> "$RUNNER_TEMP/cco-input/overview.md"
+
+        TITLE=$(jq -r '.title' "$RUNNER_TEMP/cco-input/issue.json")
         SLUG=$(printf '%s' "$TITLE" \
           | tr '[:upper:]' '[:lower:]' \
           | sed 's/[^a-z0-9]/-/g' \

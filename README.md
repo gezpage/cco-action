@@ -69,3 +69,13 @@ jobs:
 - The `gh` CLI must be available on the runner. It is pre-installed on GitHub-hosted runners. Self-hosted runners need it installed separately.
 - The `GITHUB_TOKEN` used for `gh issue view` is the default job token; no extra permissions are required beyond `issues: read`.
 - `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_MODEL` must be set as environment variables at the job level — composite actions cannot reference `secrets` directly.
+- **If your cco profile includes a `create-pr` step**, two things must be enabled:
+  1. The repository setting **Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"** must be checked.
+  2. The calling workflow must grant `pull-requests: write` permission to the job token:
+     ```yaml
+     jobs:
+       run:
+         permissions:
+           contents: write
+           pull-requests: write
+     ```
