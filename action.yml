@@ -52,6 +52,10 @@ runs:
         echo "CCO_FEATURE=${SLUG:-issue-${{ inputs.issue-number }}}" >> "$GITHUB_ENV"
         echo "CCO_BRANCH=cco/${SLUG:-issue-${{ inputs.issue-number }}}" >> "$GITHUB_ENV"
 
+    - name: Checkout feature branch
+      shell: bash
+      run: git checkout -b "$CCO_BRANCH"
+
     - name: Run cco pipeline
       shell: bash
       run: |
