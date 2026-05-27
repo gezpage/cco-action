@@ -13,6 +13,14 @@ inputs:
   issue-number:
     description: 'GitHub issue number whose body becomes the pipeline overview (overview.md)'
     required: true
+  resume-run-id:
+    description: >
+      Optional run_id of a previous workflow run to resume from. When set, the
+      run folder from that run's latest attempt is restored and cco skips
+      already-passed stages. Use this to resume a run that failed under an older
+      workflow/action commit, where "Re-run failed jobs" cannot pick it up.
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -63,7 +71,55 @@ runs:
 
     - name: Checkout feature branch
       shell: bash
-      run: git checkout -b "$CCO_BRANCH"
+      run: |
+        # For a resume the integration branch already exists on origin — fetch and
+        # check it out so cco forks worktrees from the right tip. For a fresh run
+        # it won't exist yet — create it from the current HEAD.
+        if git ls-remote --exit-code --heads origin "$CCO_BRANCH" > /dev/null 2>&1; then
+          git fetch origin "$CCO_BRANCH"
+          git checkout "$CCO_BRANCH"
+        else
+          git checkout -b "$CCO_BRANCH"
+        fi
+
+    - name: Restore prior run folder (resume)
+      # Two ways to resume, both feeding $RUNNER_TEMP/cco-run before `cco run`,
+      # which skips stages already marked passed (we don't use `cco resume` — it
+      # lacks the flat-mode flags this action relies on, ADR-053):
+      #   1. resume-run-id input set → restore the latest attempt's run folder
+      #      from that run. Use for runs that failed under an older commit.
+      #   2. "Re-run failed jobs" → github.run_attempt increments while run_id
+      #      stays the same; restore the previous attempt's run folder.
+      if: ${{ inputs.resume-run-id != '' || github.run_attempt > 1 }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/cco-run"
+        RESUME_RUN_ID="${{ inputs.resume-run-id }}"
+        if [ -n "$RESUME_RUN_ID" ]; then
+          SRC_RUN="$RESUME_RUN_ID"
+          # Attempt number is unknown; pick the highest-numbered run folder.
+          ARTIFACT=$(gh api --paginate \
+            "repos/${{ github.repository }}/actions/runs/${SRC_RUN}/artifacts" \
+            --jq '.artifacts[].name | select(startswith("cco-run-"))' \
+            2>/dev/null | sort -V | tail -1)
+        else
+          SRC_RUN="${{ github.run_id }}"
+          ARTIFACT="cco-run-${SRC_RUN}-attempt-$(( ${{ github.run_attempt }} - 1 ))"
+        fi
+        echo "::group::Resume: restoring run folder from ${ARTIFACT:-<none>} (run $SRC_RUN)"
+        if [ -z "$ARTIFACT" ]; then
+          echo "No cco-run-* artifact found on run $SRC_RUN — starting a fresh run."
+        elif gh run download "$SRC_RUN" \
+            --repo "${{ github.repository }}" \
+            --name "$ARTIFACT" \
+            --dir "$RUNNER_TEMP/cco-run"; then
+          echo "Restored prior run folder; cco will skip already-passed stages."
+        else
+          echo "Could not download $ARTIFACT — starting a fresh run."
+        fi
+        echo "::endgroup::"
 
     - name: Run cco pipeline
       shell: bash
