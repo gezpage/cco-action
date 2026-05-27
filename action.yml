@@ -85,7 +85,7 @@ runs:
     - name: Restore prior run folder (resume)
       # Two ways to resume, both feeding $RUNNER_TEMP/cco-run before `cco run`,
       # which skips stages already marked passed (we don't use `cco resume` — it
-      # lacks the flat-mode flags this action relies on, ADR-053):
+      # lacks the explicit path flags this action relies on, ADR-053):
       #   1. resume-run-id input set → restore the latest attempt's run folder
       #      from that run. Use for runs that failed under an older commit.
       #   2. "Re-run failed jobs" → github.run_attempt increments while run_id
@@ -126,12 +126,8 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        # Generate the project.yaml cco anchors on (flat mode, ADR-053).
-        # repo-root must point at the checked-out repo; callers don't commit one.
-        mkdir -p "$RUNNER_TEMP/cco-project"
-        cat > "$RUNNER_TEMP/cco-project/project.yaml" <<EOF
-        repo-root: "$(pwd)"
-        EOF
+        # repo-root points at the checked-out repo and is passed directly
+        # (cco no longer reads a project.yaml — Phase 0, cco #316).
 
         # Only pass --primary-profiles-dir and --prompts-dir when the repo
         # has a local profile directory; bundled profiles don't need them.
@@ -143,7 +139,7 @@ runs:
 
         set -o pipefail
         cco run \
-          --project-config "$RUNNER_TEMP/cco-project/project.yaml" \
+          --repo-root "$(pwd)" \
           --run-folder "$RUNNER_TEMP/cco-run/" \
           --feature-path "$RUNNER_TEMP/cco-input" \
           --profile "${{ inputs.profile }}" \
