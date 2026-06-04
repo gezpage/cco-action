@@ -1,3 +1,8 @@
+> [!WARNING]
+> **Deprecated.** `cco-action` is superseded by per-profile reusable workflows hosted in the orchestrator repo. See [gezpage/orchestrator#386](https://github.com/gezpage/cco/issues/386) for the replacement design. This repo is kept for reference and for any projects still running the monolithic `cco run` path; no new features will be added.
+
+---
+
 # cco-action
 
 GitHub composite action that runs a [cco](https://github.com/gezpage/orchestrator) pipeline stage-by-stage, driven by a GitHub issue overview.
